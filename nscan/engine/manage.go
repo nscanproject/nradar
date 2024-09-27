@@ -1,16 +1,17 @@
 package engine
 
 import (
-	"encoding/json"
 	"fmt"
-	"github.com/cockroachdb/pebble"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"nscan/engine/model"
+	"nscan/engine/model/entity"
 	"nscan/plugins/db"
-	"strconv"
+	"nscan/plugins/log"
+	"nscan/utils"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -25,33 +26,6 @@ var (
 	taskId = atomic.Uint64{}
 )
 
-func init() {
-	var maxTaskId uint64
-	if db.Local != nil {
-		iter, _ := db.Local.NewIter(nil)
-		for iter.First(); iter.Valid(); iter.Next() {
-			if buf, err := iter.ValueAndErr(); err != nil {
-				fmt.Println("db local get error", err)
-				continue
-			} else {
-				var task model.Task
-				if err := json.Unmarshal(buf, &task); err != nil {
-					fmt.Println("unmarshal error", err)
-					continue
-				}
-				if task.Id == "" {
-					continue
-				}
-				num, _ := strconv.ParseUint(task.Id, 10, 64)
-				if num > maxTaskId {
-					maxTaskId = num
-				}
-			}
-		}
-	}
-	taskId.Store(maxTaskId)
-}
-
 func createTask(ctx *gin.Context) {
 	var lock sync.Mutex
 	lock.Lock()
@@ -64,24 +38,18 @@ func createTask(ctx *gin.Context) {
 		})
 		return
 	}
-	taskId.Add(1)
-	t.Id = fmt.Sprintf("%d", taskId.Load())
 	t.Status = STATUS_NOT_START
-	buf, err := json.Marshal(t)
-	if err != nil {
+	var taskEntity, _ = buildTaskEntityFromTask(t)
+	if err := db.DB.Model(&entity.Task{}).Create(&taskEntity).Error; err != nil {
 		ctx.JSON(http.StatusOK, model.Result{
 			Code: http.StatusInternalServerError,
 			Msg:  err.Error(),
 		})
 		return
 	}
-	if err := db.Local.Set([]byte(CREATE_TASK_KET+t.Id), buf, pebble.Sync); err != nil {
-		ctx.JSON(http.StatusOK, model.Result{
-			Code: http.StatusInternalServerError,
-			Msg:  err.Error(),
-		})
-		return
-	}
+	//if err := db.Local.Set([]byte(CREATE_TASK_KET+t.Id), buf, pebble.Sync); err != nil {
+	//
+	//}
 	ctx.JSON(http.StatusOK, model.Result{
 		Code: 200,
 		Msg:  "success",
@@ -97,19 +65,35 @@ func delTasks(ctx *gin.Context) {
 		})
 		return
 	}
-	batch := db.Local.NewBatchWithSize(len(ids))
-	for _, id := range ids {
-		key := CREATE_TASK_KET + id
-		if err := batch.Delete([]byte(key), pebble.Sync); err != nil {
-			fmt.Printf("delete %s error:%+v\n", key, err)
-			ctx.JSON(http.StatusOK, model.Result{
-				Code: http.StatusInternalServerError,
-				Msg:  err.Error(),
-			})
-			return
-		}
+	db.DB.Begin()
+	err1 := db.DB.Model(&entity.Task{}).Where("id in (?)", ids).Update("deleted", true).Error
+	err2 := db.DB.Model(&entity.TaskRecord{}).Where("task_id in (?)", ids).Update("deleted", true).Error
+	err3 := db.DB.Model(&entity.PortInfo{}).Where("task_id in (?)", ids).Update("deleted", true).Error
+	err4 := db.DB.Model(&entity.Address{}).Where("task_id in (?)", ids).Update("deleted", true).Error
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		log.Logger.Error().Msgf("del tasks[task,record,portInfo,address] errors:%+v,%+v,%+v,%+v\n", err1, err2, err3, err4)
+		db.DB.Rollback()
+		ctx.JSON(http.StatusOK, model.Result{
+			Code: http.StatusInternalServerError,
+			Msg:  fmt.Sprintf("delete task ids[%+v] with error", ids),
+		})
+		return
+	} else {
+		db.DB.Commit()
 	}
-	batch.Commit(pebble.Sync)
+	//batch := db.Local.NewBatchWithSize(len(ids))
+	//for _, id := range ids {
+	//	key := CREATE_TASK_KET + id
+	//	if err := batch.Delete([]byte(key), pebble.Sync); err != nil {
+	//		fmt.Printf("delete %s error:%+v\n", key, err)
+	//		ctx.JSON(http.StatusOK, model.Result{
+	//			Code: http.StatusInternalServerError,
+	//			Msg:  err.Error(),
+	//		})
+	//		return
+	//	}
+	//}
+	//batch.Commit(pebble.Sync)
 	ctx.JSON(http.StatusOK, model.Result{
 		Code: http.StatusOK,
 		Msg:  "success",
@@ -117,33 +101,18 @@ func delTasks(ctx *gin.Context) {
 }
 
 func all(ctx *gin.Context) {
-	var lock sync.RWMutex
-	lock.RLock()
-	defer lock.RUnlock()
 	var tasks []model.Task
-	if iter, err := db.Local.NewIter(nil); err != nil {
-		fmt.Println("db local iter error", err)
+	var taskEntities []entity.Task
+	if err := db.DB.Model(&entity.Task{}).Where("deleted = ?", false).Find(&taskEntities).Error; err != nil {
 		ctx.JSON(http.StatusOK, model.Result{
 			Code: http.StatusInternalServerError,
 			Msg:  err.Error(),
+			Data: tasks,
 		})
-		return
-	} else {
-		defer iter.Close()
-		for iter.First(); iter.Valid(); iter.Next() {
-			if buf, err := iter.ValueAndErr(); err != nil {
-				fmt.Println("db local get error", err)
-				continue
-			} else {
-				var task model.Task
-				if err := json.Unmarshal(buf, &task); err != nil {
-					fmt.Println("unmarshal error", err)
-					continue
-				}
-				if task.Name != "" {
-					tasks = append(tasks, task)
-				}
-			}
+	}
+	for _, taskEntity := range taskEntities {
+		if task, succ := buildTaskEntityFromTask(taskEntity); succ {
+			tasks = append(tasks, task.(model.Task))
 		}
 	}
 	ctx.JSON(http.StatusOK, model.Result{
@@ -151,5 +120,46 @@ func all(ctx *gin.Context) {
 		Msg:  "success",
 		Data: tasks,
 	})
+}
 
+func allNames(ctx *gin.Context) {
+	var tasks []string
+	if err := db.DB.Model(&entity.Task{}).Select("name").Where("deleted = ?", false).Scan(&tasks).Error; err != nil {
+		ctx.JSON(http.StatusOK, model.Result{
+			Code: http.StatusInternalServerError,
+			Msg:  err.Error(),
+			Data: tasks,
+		})
+	}
+	ctx.JSON(http.StatusOK, model.Result{
+		Code: http.StatusOK,
+		Msg:  "success",
+		Data: tasks,
+	})
+}
+
+func buildTaskEntityFromTask(t1 any) (t2 any, succ bool) {
+	if tm, ok := t1.(model.Task); ok {
+		t2 = entity.Task{
+			Name:        tm.Name,
+			Description: tm.Description,
+			Status:      STATUS_NOT_START,
+			StartTime:   utils.FormatTime(time.Now()),
+			Target:      tm.Target,
+			Port:        "",
+		}
+		succ = true
+	} else if te, ok := t1.(entity.Task); ok {
+		t2 = model.Task{
+			Id:          te.Id,
+			Name:        te.Name,
+			Target:      te.Target,
+			Description: te.Description,
+			Status:      te.Status,
+			Tags:        nil,
+			ScreenShot:  "",
+		}
+		succ = true
+	}
+	return
 }

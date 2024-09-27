@@ -34,3 +34,10 @@ func tryGoUpperSecond(input float64) (float64, int) {
 	}
 	return tryGoUpperSecond(tmpRes)
 }
+
+func FormatTime(t time.Time, format ...string) string {
+	if len(format) > 0 {
+		return t.Format(format[0])
+	}
+	return t.Format("2006-01-02 15:04:05")
+}

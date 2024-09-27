@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"nscan/common/argx"
+	"nscan/engine/model/entity"
 	"nscan/plugins/db"
 	"nscan/utils"
 	"time"
@@ -43,12 +44,19 @@ func initRouter(enableManageFunc bool, addr ...string) error {
 	apiGroup.POST("/run", runTask)
 
 	if enableManageFunc {
-		if err := db.NewLocalDB("local.bin"); err != nil {
+		if _, f, err := db.InitGorm(); err != nil {
 			panic(err)
+		} else {
+			defer f()
 		}
-		defer db.CloseLocalDB()
+		db.DB.Migrator().AutoMigrate(&entity.Address{}, &entity.Task{}, &entity.PortInfo{}, &entity.TaskRecord{})
+		//if err := db.NewLocalDB("local.bin"); err != nil {
+		//	panic(err)
+		//}
+		//defer db.CloseLocalDB()
 		taskGroup := r.Group("/task")
 		taskGroup.GET("/all", all)
+		taskGroup.GET("/all/names", allNames)
 		taskGroup.POST("/createTask", createTask)
 		taskGroup.POST("/deleteTasks", delTasks)
 	}
