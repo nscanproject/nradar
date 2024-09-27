@@ -1,0 +1,9 @@
+package main
+
+import _ "embed"
+
+//go:embed qqwry.dat
+var QQwryBuf []byte
+
+//go:embed cidr.txt
+var CidrBuf []byte
