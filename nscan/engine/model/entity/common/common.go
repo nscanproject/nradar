@@ -6,8 +6,8 @@ import (
 )
 
 type EntityBase struct {
-	Id      uint64 `gorm:"column:id;PRIMARY_KEY;AUTO_INCREMENT"`
-	Deleted bool   `gorm:"column:deleted;uniqueIndex"`
+	Id      uint64 `gorm:"primary_key;type:bigint(20) auto_increment;not null;comment:'ID';"`
+	Deleted bool   `gorm:"column:deleted;index"`
 }
 
 type Strs []string

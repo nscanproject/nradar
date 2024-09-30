@@ -1,15 +1,18 @@
 package entity
 
-import "nscan/engine/model/entity/common"
+import (
+	"nscan/engine/model/entity/common"
+)
 
 type Task struct {
 	common.EntityBase
-	Name        string `gorm:"column:name;uniqueIndex"`
+	Name        string `gorm:"column:name;index"`
 	Description string
-	Status      uint8  `gorm:"column:status"`
+	Status      string
 	StartTime   string `gorm:"column:start_time"`
-	Target      string `gorm:"column:target"`
-	Port        string `gorm:"column:port"`
+	EndTime     string `gorm:"column:end_time"`
+	Target      string
+	Port        string
 }
 
 type TaskRecord struct {

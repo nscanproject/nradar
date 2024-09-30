@@ -5,7 +5,8 @@ type Task struct {
 	Name        string   `json:"name"`
 	Target      string   `json:"target"`
 	Description string   `json:"description"`
-	Status      uint8    `json:"status"`
+	Status      string   `json:"status"`
 	Tags        []string `json:"tags"`
-	ScreenShot  string   `json:"screenShot,omitempty"`
+	StartTime   string   `json:"startTime"`
+	EndTime     string   `json:"endTime"`
 }

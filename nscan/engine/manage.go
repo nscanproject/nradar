@@ -10,20 +10,15 @@ import (
 	"nscan/plugins/log"
 	"nscan/utils"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 const (
 	CREATE_TASK_KET = "#CREATE_TASK_KEY"
 
-	STATUS_NOT_START = iota - 1
-	STATUS_RUNNING
-	STATUS_FINISHED
-)
-
-var (
-	taskId = atomic.Uint64{}
+	STATUS_NOT_START = "NOT_START"
+	STATUS_RUNNING   = "RUNNING"
+	STATUS_FINISHED  = "FINISHED"
 )
 
 func createTask(ctx *gin.Context) {
@@ -40,20 +35,31 @@ func createTask(ctx *gin.Context) {
 	}
 	t.Status = STATUS_NOT_START
 	var taskEntity, _ = buildTaskEntityFromTask(t)
-	if err := db.DB.Model(&entity.Task{}).Create(&taskEntity).Error; err != nil {
+	finalTaskEntity := taskEntity.(entity.Task)
+	if err := db.DB.Model(&entity.Task{}).Create(&finalTaskEntity).Error; err != nil {
 		ctx.JSON(http.StatusOK, model.Result{
 			Code: http.StatusInternalServerError,
 			Msg:  err.Error(),
 		})
 		return
+	} else {
+		if t1, succ := buildTaskEntityFromTask(taskEntity); succ {
+			ctx.JSON(http.StatusOK, model.Result{
+				Code: 200,
+				Msg:  "success",
+				Data: t1,
+			})
+		} else {
+			ctx.JSON(http.StatusOK, model.Result{
+				Code: http.StatusInternalServerError,
+				Msg:  err.Error(),
+			})
+		}
 	}
 	//if err := db.Local.Set([]byte(CREATE_TASK_KET+t.Id), buf, pebble.Sync); err != nil {
 	//
 	//}
-	ctx.JSON(http.StatusOK, model.Result{
-		Code: 200,
-		Msg:  "success",
-	})
+
 }
 
 func delTasks(ctx *gin.Context) {
@@ -103,7 +109,7 @@ func delTasks(ctx *gin.Context) {
 func all(ctx *gin.Context) {
 	var tasks []model.Task
 	var taskEntities []entity.Task
-	if err := db.DB.Model(&entity.Task{}).Where("deleted = ?", false).Find(&taskEntities).Error; err != nil {
+	if err := db.DB.Model(&entity.Task{}).Where("deleted = ?", false).Scan(&taskEntities).Error; err != nil {
 		ctx.JSON(http.StatusOK, model.Result{
 			Code: http.StatusInternalServerError,
 			Msg:  err.Error(),
@@ -157,7 +163,8 @@ func buildTaskEntityFromTask(t1 any) (t2 any, succ bool) {
 			Description: te.Description,
 			Status:      te.Status,
 			Tags:        nil,
-			ScreenShot:  "",
+			StartTime:   te.StartTime,
+			EndTime:     te.EndTime,
 		}
 		succ = true
 	}

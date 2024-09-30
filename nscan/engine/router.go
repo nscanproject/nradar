@@ -57,9 +57,11 @@ func initRouter(enableManageFunc bool, addr ...string) error {
 		taskGroup := r.Group("/task")
 		taskGroup.GET("/all", all)
 		taskGroup.GET("/all/names", allNames)
-		taskGroup.POST("/createTask", createTask)
-		taskGroup.POST("/deleteTasks", delTasks)
+		taskGroup.POST("/create", createTask)
+		taskGroup.POST("/delete", delTasks)
 	}
+
+	r.GET("/api/user/get_userinfo", getInfo)
 	if argx.Verbose {
 		fmt.Printf("Listening and serving HTTP on %s\n", addr)
 	}
